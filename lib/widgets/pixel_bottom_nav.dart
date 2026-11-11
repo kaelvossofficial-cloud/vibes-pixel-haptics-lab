@@ -16,9 +16,9 @@ class PixelBottomNav extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 64,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: VibesTheme.deepVoid,
-        border: const Border(
+        border: Border(
           top: BorderSide(color: VibesTheme.surfaceBorder, width: 2.0),
         ),
       ),

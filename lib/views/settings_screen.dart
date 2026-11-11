@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../core/theme/vibes_theme.dart';
-import '../core/theme/pixel_borders.dart';
 import '../widgets/pixel_card.dart';
 import '../widgets/pixel_badge.dart';
 

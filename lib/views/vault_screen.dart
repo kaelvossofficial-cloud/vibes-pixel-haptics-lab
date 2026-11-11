@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../core/theme/vibes_theme.dart';
-import '../core/theme/pixel_borders.dart';
 import '../models/preset_item.dart';
 import '../providers/haptic_lab_provider.dart';
 import '../widgets/pixel_button.dart';

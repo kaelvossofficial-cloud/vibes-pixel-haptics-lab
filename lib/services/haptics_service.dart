@@ -17,10 +17,10 @@ class HapticsService {
 
   Future<void> initialize() async {
     try {
-      final bool? hasVib = await Vibration.hasVibrator();
+      final hasVib = await Vibration.hasVibrator();
       if (hasVib == true) {
-        _hasCustomVibrations = (await Vibration.hasCustomVibrationsSupport()) ?? false;
-        _hasAmplitudeControl = (await Vibration.hasAmplitudeControl()) ?? false;
+        _hasCustomVibrations = await Vibration.hasCustomVibrationsSupport();
+        _hasAmplitudeControl = await Vibration.hasAmplitudeControl();
       }
     } catch (e) {
       // Graceful fallback for web/desktop/unsupported platforms
