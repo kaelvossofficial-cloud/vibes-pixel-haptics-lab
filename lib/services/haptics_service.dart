@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:flutter/services.dart';
-import 'package:vibration/vibration.dart';
 import '../models/waveform_config.dart';
 
 class HapticsService {
   static final HapticsService _instance = HapticsService._internal();
   factory HapticsService() => _instance;
   HapticsService._internal();
+
+  static const MethodChannel _channel = MethodChannel('com.pixelhaptics.vibes/haptics');
 
   bool _hasCustomVibrations = false;
   bool _hasAmplitudeControl = false;
@@ -17,13 +18,13 @@ class HapticsService {
 
   Future<void> initialize() async {
     try {
-      final hasVib = await Vibration.hasVibrator();
+      final bool? hasVib = await _channel.invokeMethod<bool>('hasVibrator');
       if (hasVib == true) {
-        _hasCustomVibrations = await Vibration.hasCustomVibrationsSupport();
-        _hasAmplitudeControl = await Vibration.hasAmplitudeControl();
+        _hasAmplitudeControl = (await _channel.invokeMethod<bool>('hasAmplitudeControl')) ?? false;
+        _hasCustomVibrations = true;
       }
     } catch (e) {
-      // Graceful fallback for web/desktop/unsupported platforms
+      // Graceful fallback for iOS or web
       _hasCustomVibrations = false;
       _hasAmplitudeControl = false;
     }
@@ -74,10 +75,9 @@ class HapticsService {
       final int amplitudeInt = (config.amplitude * 255).clamp(1, 255).toInt();
 
       if (_hasAmplitudeControl) {
-        // High fidelity platform vibration effect with amplitude control
-        // Generate stepped pulse slice pattern based on waveform
-        final List<int> pattern = [];
-        final List<int> intensities = [];
+        // High-fidelity native Android VibrationEffect pattern with amplitude envelope
+        final List<int> timings = [];
+        final List<int> amplitudes = [];
 
         final int stepPeriod = mathMax(8, (config.periodMs).round());
         final int steps = (duration / stepPeriod).clamp(1, 30).toInt();
@@ -85,24 +85,23 @@ class HapticsService {
         for (int i = 0; i < steps; i++) {
           final double t = (i * stepPeriod) / 1000.0;
           final double sample = config.sampleAt(t).abs();
-          pattern.add(stepPeriod ~/ 2); // active pulse
-          intensities.add((sample * amplitudeInt).clamp(1, 255).toInt());
-          pattern.add(stepPeriod ~/ 2); // rest interval
-          intensities.add(0);
+          timings.add(stepPeriod ~/ 2); // active pulse
+          amplitudes.add((sample * amplitudeInt).clamp(1, 255).toInt());
+          timings.add(stepPeriod ~/ 2); // rest interval
+          amplitudes.add(0);
         }
 
-        await Vibration.vibrate(
-          pattern: pattern,
-          intensities: intensities,
-        );
+        await _channel.invokeMethod('vibratePattern', {
+          'timings': timings,
+          'amplitudes': amplitudes,
+        });
       } else if (_hasCustomVibrations) {
-        // Fallback for custom pattern without continuous amplitude
-        await Vibration.vibrate(
-          duration: duration,
-          amplitude: amplitudeInt,
-        );
+        await _channel.invokeMethod('vibrate', {
+          'duration': duration,
+          'amplitude': amplitudeInt,
+        });
       } else {
-        // Fallback standard system haptics
+        // Fallback standard platform haptics
         if (config.amplitude > 0.6) {
           HapticFeedback.heavyImpact();
         } else {
@@ -110,7 +109,6 @@ class HapticsService {
         }
       }
     } catch (e) {
-      // Fallback to basic HapticFeedback if Vibration plugin fails
       HapticFeedback.mediumImpact();
     }
   }
@@ -120,8 +118,10 @@ class HapticsService {
     _loopTimer?.cancel();
     _loopTimer = null;
     try {
-      await Vibration.cancel();
-    } catch (_) {}
+      await _channel.invokeMethod('cancel');
+    } catch (_) {
+      // Ignore
+    }
   }
 
   int mathMax(int a, int b) => a > b ? a : b;
