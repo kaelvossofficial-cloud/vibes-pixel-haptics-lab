@@ -1,0 +1,162 @@
+name: Build & Release VIBES
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      is_draft:
+        description: 'Create Draft Release?'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build, Sign & Publish Android APK & AAB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter Engine
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.6'
+          channel: 'stable'
+          cache: true
+          cache-key: 'flutter-:os:-:channel:-:version:'
+
+      - name: Cache Gradle Packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Install Flutter Dependencies
+        run: flutter pub get
+
+      - name: Run Static Code Analysis
+        run: flutter analyze --no-fatal-infos
+
+      - name: Execute Unit & Waveform Physics Tests
+        run: flutter test
+
+      - name: Configure Android Release Signing Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          mkdir -p android/keystores
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding production keystore from GitHub Secrets..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/keystores/release.jks
+            echo "KEYSTORE_FILE=$(pwd)/android/keystores/release.jks" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD" >> $GITHUB_ENV
+            echo "KEY_ALIAS=$KEY_ALIAS" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=$KEY_PASSWORD" >> $GITHUB_ENV
+          else
+            echo "No production keystore secret found. Generating automated self-signed release key..."
+            keytool -genkey -v -keystore android/keystores/release.jks \
+              -alias vibes_release_key -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass vibes_secure_password -keypass vibes_secure_password \
+              -dname "CN=Vibes Developer, OU=Pixel Haptics Lab, O=PixelHaptics, L=Cyber, ST=CA, C=US"
+            echo "KEYSTORE_FILE=$(pwd)/android/keystores/release.jks" >> $GITHUB_ENV
+            echo "KEYSTORE_PASSWORD=vibes_secure_password" >> $GITHUB_ENV
+            echo "KEY_ALIAS=vibes_release_key" >> $GITHUB_ENV
+            echo "KEY_PASSWORD=vibes_secure_password" >> $GITHUB_ENV
+          fi
+
+      - name: Build Universal Release APK
+        run: flutter build apk --release
+
+      - name: Build Split-per-ABI Release APKs
+        run: flutter build apk --release --split-per-abi
+
+      - name: Build Android App Bundle (AAB)
+        run: flutter build appbundle --release
+
+      - name: Prepare Release Artifact Directory
+        run: |
+          mkdir -p release-artifacts
+          
+          # Universal APK
+          cp build/app/outputs/flutter-apk/app-release.apk release-artifacts/vibes-universal-release.apk
+          
+          # ABI Specific APKs
+          if [ -f "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk release-artifacts/vibes-armeabi-v7a-release.apk
+          fi
+          if [ -f "build/app/outputs/flutter-apk/app-arm64-v8a-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk release-artifacts/vibes-arm64-v8a-release.apk
+          fi
+          if [ -f "build/app/outputs/flutter-apk/app-x86_64-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-x86_64-release.apk release-artifacts/vibes-x86_64-release.apk
+          fi
+          
+          # Play Store App Bundle
+          cp build/app/outputs/bundle/release/app-release.aab release-artifacts/vibes-release.aab
+          
+          # Generate SHA-256 Checksums
+          cd release-artifacts
+          sha256sum * > checksums.txt
+          cat checksums.txt
+          cd ..
+
+      - name: Determine Target Release Tag
+        id: tag_info
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.release_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag_info.outputs.tag }}
+          name: "VIBES Release ${{ steps.tag_info.outputs.tag }}"
+          draft: ${{ github.event.inputs.is_draft || false }}
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## 🕹️ VIBES: The Pixel Haptics Lab (${{ steps.tag_info.outputs.tag }})
+
+            ### ⚡ Included Release Binaries:
+            - **`vibes-universal-release.apk`**: Universal APK compatible with all Android devices.
+            - **`vibes-arm64-v8a-release.apk`**: Optimized for modern 64-bit ARM smartphones.
+            - **`vibes-armeabi-v7a-release.apk`**: 32-bit legacy ARM fallback.
+            - **`vibes-x86_64-release.apk`**: Android emulators & Chromebooks.
+            - **`vibes-release.aab`**: Google Play Store App Bundle.
+            - **`checksums.txt`**: Cryptographic SHA-256 checksums.
+
+            ### ✨ Key Features in this Build:
+            - 🔬 **Real-time Pixel Oscilloscope** with hardware LRA sweet-spot detection (150-250 Hz).
+            - 🎵 **Coupled Audio-Haptic Synthesizer** generating pure PCM waveforms in-memory.
+            - 📊 **Physics Telemetry Logger** with 1-click JSON & CSV data export.
+            - 💎 **Curated Preset Vault** featuring "Seismic Shock", "Redstone Clock", and more.
+          files: |
+            release-artifacts/*
