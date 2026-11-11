@@ -102,7 +102,9 @@ jobs:
           mkdir -p release-artifacts
           
           # Universal APK
-          cp build/app/outputs/flutter-apk/app-release.apk release-artifacts/vibes-universal-release.apk
+          if [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            cp build/app/outputs/flutter-apk/app-release.apk release-artifacts/vibes-universal-release.apk
+          fi
           
           # ABI Specific APKs
           if [ -f "build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk" ]; then
@@ -116,7 +118,9 @@ jobs:
           fi
           
           # Play Store App Bundle
-          cp build/app/outputs/bundle/release/app-release.aab release-artifacts/vibes-release.aab
+          if [ -f "build/app/outputs/bundle/release/app-release.aab" ]; then
+            cp build/app/outputs/bundle/release/app-release.aab release-artifacts/vibes-release.aab
+          fi
           
           # Generate SHA-256 Checksums
           cd release-artifacts
