@@ -89,7 +89,7 @@ jobs:
           fi
 
       - name: Build Universal Release APK
-        run: flutter build apk --release --android-skip-build-dependency-validation
+        run: flutter build apk --release -v --android-skip-build-dependency-validation
 
       - name: Build Split-per-ABI Release APKs
         run: flutter build apk --release --split-per-abi --android-skip-build-dependency-validation
