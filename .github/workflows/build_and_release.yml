@@ -38,6 +38,7 @@ jobs:
       - name: Setup Flutter Engine
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.27.4'
           channel: 'stable'
           cache: true
           cache-key: 'flutter-:os:-:channel:-:version:'
@@ -89,7 +90,7 @@ jobs:
           fi
 
       - name: Build Universal Release APK
-        run: flutter build apk --release -v --android-skip-build-dependency-validation
+        run: flutter build apk --release --android-skip-build-dependency-validation -Pdisable-abi-filtering=true
 
       - name: Build Split-per-ABI Release APKs
         run: flutter build apk --release --split-per-abi --android-skip-build-dependency-validation
