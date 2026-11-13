@@ -50,7 +50,6 @@ android {
 
     signingConfigs {
         release {
-            // Configured via GitHub Actions CI or local properties if available
             def keystoreFile = System.getenv("KEYSTORE_FILE")
             if (keystoreFile != null && file(keystoreFile).exists()) {
                 storeFile file(keystoreFile)
@@ -78,4 +77,8 @@ android {
 
 flutter {
     source '../..'
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.9.24"
 }
