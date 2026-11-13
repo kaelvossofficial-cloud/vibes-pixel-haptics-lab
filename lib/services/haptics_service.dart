@@ -7,27 +7,13 @@ class HapticsService {
   factory HapticsService() => _instance;
   HapticsService._internal();
 
-  static const MethodChannel _channel = MethodChannel('com.pixelhaptics.vibes/haptics');
-
-  bool _hasCustomVibrations = false;
-  bool _hasAmplitudeControl = false;
   bool _isPlaying = false;
   Timer? _loopTimer;
 
   bool get isPlaying => _isPlaying;
 
   Future<void> initialize() async {
-    try {
-      final bool? hasVib = await _channel.invokeMethod<bool>('hasVibrator');
-      if (hasVib == true) {
-        _hasAmplitudeControl = (await _channel.invokeMethod<bool>('hasAmplitudeControl')) ?? false;
-        _hasCustomVibrations = true;
-      }
-    } catch (e) {
-      // Graceful fallback for iOS or web
-      _hasCustomVibrations = false;
-      _hasAmplitudeControl = false;
-    }
+    // Native framework haptics ready
   }
 
   /// Tactile micro-tick when dragging stepped sliders or tapping pixel keys
@@ -71,58 +57,33 @@ class HapticsService {
 
   Future<void> _executeBurst(WaveformConfig config) async {
     try {
-      final int duration = config.burstDurationMs;
-      final int amplitudeInt = (config.amplitude * 255).clamp(1, 255).toInt();
-
-      if (_hasAmplitudeControl) {
-        // High-fidelity native Android VibrationEffect pattern with amplitude envelope
-        final List<int> timings = [];
-        final List<int> amplitudes = [];
-
-        final int stepPeriod = mathMax(8, (config.periodMs).round());
-        final int steps = (duration / stepPeriod).clamp(1, 30).toInt();
-
-        for (int i = 0; i < steps; i++) {
-          final double t = (i * stepPeriod) / 1000.0;
-          final double sample = config.sampleAt(t).abs();
-          timings.add(stepPeriod ~/ 2); // active pulse
-          amplitudes.add((sample * amplitudeInt).clamp(1, 255).toInt());
-          timings.add(stepPeriod ~/ 2); // rest interval
-          amplitudes.add(0);
-        }
-
-        await _channel.invokeMethod('vibratePattern', {
-          'timings': timings,
-          'amplitudes': amplitudes,
-        });
-      } else if (_hasCustomVibrations) {
-        await _channel.invokeMethod('vibrate', {
-          'duration': duration,
-          'amplitude': amplitudeInt,
-        });
+      if (config.amplitude > 0.7) {
+        await HapticFeedback.heavyImpact();
+      } else if (config.amplitude > 0.35) {
+        await HapticFeedback.mediumImpact();
       } else {
-        // Fallback standard platform haptics
-        if (config.amplitude > 0.6) {
-          HapticFeedback.heavyImpact();
-        } else {
-          HapticFeedback.mediumImpact();
+        await HapticFeedback.lightImpact();
+      }
+
+      // If burst duration is long, pulse again after period
+      if (config.burstDurationMs > 150) {
+        final int steps = (config.burstDurationMs / 120).clamp(1, 4).toInt();
+        for (int i = 1; i < steps; i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (!_isPlaying) break;
+          if (config.amplitude > 0.5) {
+            await HapticFeedback.mediumImpact();
+          } else {
+            await HapticFeedback.lightImpact();
+          }
         }
       }
-    } catch (e) {
-      HapticFeedback.mediumImpact();
-    }
+    } catch (_) {}
   }
 
   Future<void> stop() async {
     _isPlaying = false;
     _loopTimer?.cancel();
     _loopTimer = null;
-    try {
-      await _channel.invokeMethod('cancel');
-    } catch (_) {
-      // Ignore
-    }
   }
-
-  int mathMax(int a, int b) => a > b ? a : b;
 }
